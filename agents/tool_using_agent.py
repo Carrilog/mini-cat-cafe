@@ -1,6 +1,6 @@
 from __future__ import annotations
+
 """Tool-using agent mixin — handles the tool call loop."""
-import json
 from typing import Any
 
 from core.base_agent import BaseAgent
@@ -29,22 +29,34 @@ class ToolUsingAgent(BaseAgent):
             if not response.tool_calls:
                 return response.content
 
-            # Append assistant turn
-            messages.append(Message(Role.ASSISTANT, response.content))
+            # Append assistant turn — preserve raw blocks for Anthropic protocol
+            messages.append(
+                Message(
+                    Role.ASSISTANT,
+                    response.content,
+                    raw_blocks=response.raw_blocks,
+                    metadata=response.metadata,
+                )
+            )
 
-            # Execute each tool call and append results
+            # Execute tools and build tool_result blocks
+            tool_result_blocks = []
             for tc in response.tool_calls:
                 tool = self.tools.get(tc.name)
-                if tool is None:
-                    result = f"Error: unknown tool '{tc.name}'"
-                else:
-                    result = await tool.execute(**tc.arguments)
-
-                messages.append(
-                    Message(
-                        Role.TOOL,
-                        json.dumps({"tool_use_id": tc.call_id, "content": result}),
-                    )
+                result = (
+                    await tool.execute(**tc.arguments)
+                    if tool is not None
+                    else f"Error: unknown tool '{tc.name}'"
                 )
+                tool_result_blocks.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tc.call_id,
+                        "content": result,
+                    }
+                )
+
+            # All tool results go in a single user message
+            messages.append(Message(Role.USER, "", raw_blocks=tool_result_blocks))
 
         return "Max iterations reached without a final answer."

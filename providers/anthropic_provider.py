@@ -25,21 +25,28 @@ class AnthropicProvider(BaseLLMProvider):
         tools: list[dict[str, Any]] | None = None,
         **kwargs,
     ) -> LLMResponse:
-        api_messages = [
-            {"role": m.role.value, "content": m.content}
-            for m in messages
-            if m.role != Role.SYSTEM
-        ]
+        api_messages = []
+        for m in messages:
+            if m.role == Role.SYSTEM:
+                continue
+            if m.raw_blocks:
+                api_messages.append({"role": m.role.value, "content": m.raw_blocks})
+            else:
+                api_messages.append({"role": m.role.value, "content": m.content})
+
         system = next(
             (m.content for m in messages if m.role == Role.SYSTEM), None
         )
 
+        # adaptive thinking is supported on claude-*-4-6 models only
+        _supports_adaptive = "4-6" in self.model
         params: dict[str, Any] = {
             "model": self.model,
             "max_tokens": kwargs.get("max_tokens", 16000),
             "messages": api_messages,
-            "thinking": {"type": "adaptive"},
         }
+        if _supports_adaptive:
+            params["thinking"] = {"type": "adaptive"}
         if system:
             params["system"] = system
         if tools:
@@ -61,9 +68,18 @@ class AnthropicProvider(BaseLLMProvider):
                     )
                 )
 
+        # Preserve raw content blocks for correct tool round-trip
+        raw_blocks = [
+            {"type": "text", "text": b.text} if b.type == "text"
+            else {"type": "tool_use", "id": b.id, "name": b.name, "input": b.input}
+            for b in response.content
+            if b.type in ("text", "tool_use")
+        ]
+
         return LLMResponse(
             content=content_text,
             tool_calls=tool_calls,
+            raw_blocks=raw_blocks,
             usage={
                 "input_tokens": response.usage.input_tokens,
                 "output_tokens": response.usage.output_tokens,
