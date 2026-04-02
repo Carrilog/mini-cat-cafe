@@ -57,9 +57,8 @@ python cli/main.py --task "research factor investing" --provider qwen
 
 ## 扩展方法
 
-**添加新 Provider：** 在 `providers/factory.py` 的 `match` 里加一个 case。
+**添加新 Provider：** 在 `providers/factory.py` 的 `if/elif` 链里加一个分支。
 
 **添加新工具：** 继承 `tools/base_tool.py` 的 `BaseTool`，实现 `name`、`description`、`parameters_schema`、`execute`。
 
 **添加新 Agent：** 继承 `agents/tool_using_agent.py` 的 `ToolUsingAgent`，传入工具列表和 system prompt。
-# mini-cat-cafe
